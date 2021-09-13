@@ -1,0 +1,188 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+
+  <!-- This script attempts to replicate the rules in UnrealBuildTool for finding automation projects
+    Resolving these projects into a set of references that AutomationTool.csproj can depend on.
+
+    This allows us to just set AutomationTool project as the startup project but still build 
+    all the scripts used. It also makes it easy to build automation tool and all scripts from command line.
+
+    The rules are:
+
+    Automation project files are defined as ending in Automation.csproj
+
+    Engine Directories are:
+    (technically UBT will also search thru all of Engine but that is slow in msbuild and we have no valid hits not covered by the subdirectories there)
+    * Engine/Source
+    * Engine/Platforms
+    * Engine/Restricted
+    * Engine/Restricted/Platforms
+    * Plugins/Source
+
+    Game projects:
+    * Find all uprojects
+    * Searching under Build folder for any automation project file
+
+    if no uprojectdirs file is found we simply search the root folder for uprojects
+  -->
+  <PropertyGroup>
+    <RootDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../../'))</RootDir>
+    <EngineDir>$([System.IO.Path]::GetFullPath('$(RootDir)/Engine'))</EngineDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <UProjectDir Include="$(RootDir)*.uprojectdirs"/>
+    <UProjectDirFiles Include="@(UProjectDir->'%(FullPath)')" />
+  </ItemGroup>
+
+  <!-- Create the reference file before the build starts -->
+  <PropertyGroup>
+    <BuildDependsOn>
+        CreateReferenceFile;
+        $(BuildDependsOn);
+    </BuildDependsOn>
+  </PropertyGroup>
+
+  <Target Name="ResolveEngineReferences">
+    <ItemGroup>
+      <EngineSearchDirs Include="$(EngineDir)/Source;$(EngineDir)/Platforms;$(EngineDir)/Restricted;$(EngineDir)/Restricted/Platforms;$(RootDir)/Plugins" />
+    </ItemGroup>
+
+    <!-- Exclude AutiomationUtils as its already referenced by automationtool.csproj
+    We have a few different ways to exclude it depending on how the path seperators look to handle differences 
+    between different msbuild versions. If this reference is present twice visual studio gets confused and shows a warning. -->
+    <CreateItem Include="@(EngineSearchDirs->'%(FullPath)/**/*.Automation.csproj')" 
+        Exclude="$(EngineDir)\Source/Programs\AutomationTool\AutomationUtils\AutomationUtils.Automation.csproj;
+        $(EngineDir)\Source\Programs\AutomationTool\AutomationUtils\AutomationUtils.Automation.csproj">
+      <Output TaskParameter="Include" ItemName="EngineAutomationProjects"/>
+    </CreateItem>
+
+  </Target>
+
+  <Target Name="ResolveUProjectReferences">
+    <ItemGroup>
+      <ItemsFromUProjectDirs Include="$([System.IO.File]::ReadAllText(%(UProjectDirFiles.FullPath)))" Condition="Exists(%(UProjectDirFiles.FullPath))"/>
+    </ItemGroup>
+    
+    <PropertyGroup>
+      <UProjectDirFileContents>@(ItemsFromUProjectDirs)</UProjectDirFileContents>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <UProjectDirLines Include="$([System.Text.RegularExpressions.Regex]::Split(`$(UProjectDirFileContents)`, `\r\n|\r|\n`))" />
+      <UProjectDirLines Include="." Condition="!Exists(%(UProjectDirFiles.FullPath))"/>
+      <UProjectCandidates Include="@(UProjectDirLines)" Condition="!$([System.String]::Copy(%(Identity)).StartsWith(`;`))" />
+
+      <!-- Removing trailing slashes on some lines in uprojectdirs-->
+      <UProjectCandidatesFixed Include="$([System.String]::Copy('%(UProjectCandidates.Identity)').TrimEnd('/'))" Condition="HasTrailingSlash(%(Identity))" />
+      <UProjectCandidatesFixed Include="@(UProjectCandidates -> '%(Identity)')" Condition="!HasTrailingSlash(%(Identity))" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!-- All relative paths specifed in uproject together with the Engine directory are valid roots for places 
+      that can contain a uproject file in a directory one level below them -->
+      <PotentialUProjectDirs Include="@(UProjectCandidatesFixed->'$(RootDir)%(Identity)');$(EngineDir)"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <PotentialUProjectDirs Include="$(EngineDir)" Condition="!Exists(%(UProjectDirFiles.FullPath))"/>
+    </ItemGroup>
+
+    <!-- Search one level down from the root for uprojects-->
+    <ItemGroup>
+      <UProjects Include="@(PotentialUProjectDirs->'%(FullPath)/*/*.uproject')"/>
+    </ItemGroup>
+    
+    <CreateItem Include="@(UProjects)">
+      <Output TaskParameter="Include" ItemName="UProjectFiles"/>
+    </CreateItem>
+
+    <ItemGroup>
+      <UProjectDirs Include="@(UProjectFiles->'%(RootDir)%(Directory)')"/>
+    </ItemGroup>
+
+    <!-- Expected automation tool projects end with .Automation.csproj -->
+    <CreateItem Include="@(UProjectDirs->'%(FullPath)Build/Scripts/*.Automation.csproj')">
+      <Output TaskParameter="Include" ItemName="UProjectAutomationProjects"/>
+    </CreateItem>
+  </Target>
+
+  <Target Name="DebugPrintAutomationProjects" DependsOnTargets="ResolveEngineReferences;ResolveUProjectReferences">
+
+    <!-- debug output for easier debugging -->
+    <Message Text="EngineDir: $(EngineDir)"/>
+    <Message Text="UProjectDir: @(UProjectDir)"/>
+    <Message Text="UProjectDirFiles: @(UProjectDirFiles)"/>
+    <Message Text="ItemsFromUProjectDirs: @(ItemsFromUProjectDirs)"/>
+    <Message Text="UProjectDirLines: @(UProjectDirLines, ' | ')"/>
+    <Message Text="UProjectCandidates: @(UProjectCandidates)"/>
+    <Message Text="PotentialUProjectDirs: @(PotentialUProjectDirs)"/>
+    <Message Text="UProjects: @(UProjects)"/>
+    <Message Text="UProjectFiles: @(UProjectFiles)"/>
+    <Message Text="UProjectDirs: @(UProjectDirs)"/>
+    <Message Text="UProjectAutomationProjects: @(UProjectAutomationProjects)"/>
+
+    <Message Text="EngineSearchDirs: @(EngineSearchDirs)"/>
+    <Message Text="EngineAutomationProjects: @(EngineAutomationProjects)"/>
+  </Target>
+
+  
+  <Target Name="CreateReferenceFile" DependsOnTargets="ResolveEngineReferences;ResolveUProjectReferences">
+    <ItemGroup>
+      <AutomationProjects Include="@(UProjectAutomationProjects)" />
+      <AutomationProjects Include="@(EngineAutomationProjects)" />
+
+      <Line Include="heading">
+        <Text><![CDATA[<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<ItemGroup>]]>
+        </Text>
+      </Line>
+      <Line Include="@(AutomationProjects)">
+        <Text>
+          <![CDATA[<ProjectReference Include="%(FullPath)"><Private>false</Private></ProjectReference>]]>
+        </Text>
+      </Line>
+      <Line Include="footer">
+        <Text><![CDATA[</ItemGroup>
+</Project>]]></Text>
+      </Line>
+      <LineText Include="%(Line.Text)" />
+      
+    </ItemGroup>
+    
+    <Message Text="Updating AutomationTool.csproj.References"/>
+    <WriteLinesToFile
+      File="AutomationTool.csproj.References"
+      Lines="@(LineText)"
+      Overwrite="true"
+    />
+  </Target>
+
+  <Target Name="Restore" DependsOnTargets="ResolveEngineReferences;ResolveUProjectReferences">
+    <ItemGroup>
+      <AutomationProjects Include="@(UProjectAutomationProjects)" />
+      <AutomationProjects Include="@(EngineAutomationProjects)" />
+    </ItemGroup>
+    
+    <!-- Nuget does not handle being invoked in parallel so we do this sequentually -->
+    <MSBuild Projects="@(AutomationProjects)" Targets="Restore" Properties="EngineDir=$(EngineDir)" BuildInParallel="false" />
+  </Target>
+
+  <Target Name="Build" DependsOnTargets="ResolveEngineReferences;ResolveUProjectReferences">
+    <ItemGroup>
+      <AutomationProjects Include="@(UProjectAutomationProjects)" />
+      <AutomationProjects Include="@(EngineAutomationProjects)" />
+    </ItemGroup>
+    
+    <MSBuild Projects="@(AutomationProjects)" Targets="Build" Properties="EngineDir=$(EngineDir)" BuildInParallel="true" />
+  </Target>
+
+  <Target Name="Clean" DependsOnTargets="ResolveEngineReferences;ResolveUProjectReferences">
+    <ItemGroup>
+      <AutomationProjects Include="@(UProjectAutomationProjects)" />
+      <AutomationProjects Include="@(EngineAutomationProjects)" />
+    </ItemGroup>
+    
+    <MSBuild Projects="@(AutomationProjects)" Targets="Clean" Properties="EngineDir=$(EngineDir)" BuildInParallel="true" />
+  </Target>
+</Project>

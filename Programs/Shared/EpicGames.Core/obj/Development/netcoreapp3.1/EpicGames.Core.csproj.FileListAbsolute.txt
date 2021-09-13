@@ -1,0 +1,7 @@
+E:\UE4\UnrealEngine\Engine\Source\Programs\Shared\EpicGames.Core\bin\Development\netcoreapp3.1\EpicGames.Core.deps.json
+E:\UE4\UnrealEngine\Engine\Source\Programs\Shared\EpicGames.Core\bin\Development\netcoreapp3.1\EpicGames.Core.dll
+E:\UE4\UnrealEngine\Engine\Source\Programs\Shared\EpicGames.Core\bin\Development\netcoreapp3.1\EpicGames.Core.pdb
+E:\UE4\UnrealEngine\Engine\Source\Programs\Shared\EpicGames.Core\obj\Development\netcoreapp3.1\EpicGames.Core.csprojAssemblyReference.cache
+E:\UE4\UnrealEngine\Engine\Source\Programs\Shared\EpicGames.Core\obj\Development\netcoreapp3.1\EpicGames.Core.csproj.CoreCompileInputs.cache
+E:\UE4\UnrealEngine\Engine\Source\Programs\Shared\EpicGames.Core\obj\Development\netcoreapp3.1\EpicGames.Core.dll
+E:\UE4\UnrealEngine\Engine\Source\Programs\Shared\EpicGames.Core\obj\Development\netcoreapp3.1\EpicGames.Core.pdb
